@@ -1,8 +1,11 @@
 import collections
 import dataclasses
+import json
 import logging
 import math
 import pathlib
+import re
+import time
 
 import imageio
 from libero.libero import benchmark
@@ -41,6 +44,7 @@ class Args:
     # Utils
     #################################################################################################################
     video_out_path: str = "data/libero/videos"  # Path to save videos
+    metrics_out_path: str = "data/libero/metrics/rollout_metrics.jsonl"  # Path to save rollout metrics
 
     seed: int = 7  # Random Seed (for reproducibility)
 
@@ -55,7 +59,11 @@ def eval_libero(args: Args) -> None:
     num_tasks_in_suite = task_suite.n_tasks
     logging.info(f"Task suite: {args.task_suite_name}")
 
-    pathlib.Path(args.video_out_path).mkdir(parents=True, exist_ok=True)
+    video_out_dir = pathlib.Path(args.video_out_path)
+    video_out_dir.mkdir(parents=True, exist_ok=True)
+    metrics_out_path = pathlib.Path(args.metrics_out_path)
+    metrics_out_path.parent.mkdir(parents=True, exist_ok=True)
+    metrics_out_path.write_text("", encoding="utf-8")
 
     if args.task_suite_name == "libero_spatial":
         max_steps = 220  # longest training demo has 193 steps
@@ -98,6 +106,13 @@ def eval_libero(args: Args) -> None:
 
             # Setup
             t = 0
+            done = False
+            error_message = None
+            executed_steps = 0
+            num_replans = 0
+            infer_latency_ms = []
+            action_delta_norms = []
+            previous_action = None
             replay_images = []
 
             logging.info(f"Starting episode {task_episodes+1}...")
@@ -141,16 +156,23 @@ def eval_libero(args: Args) -> None:
                         }
 
                         # Query model to get action
-                        action_chunk = client.infer(element)["actions"]
+                        infer_start = time.perf_counter()
+                        action_chunk = np.asarray(client.infer(element)["actions"])
+                        infer_latency_ms.append((time.perf_counter() - infer_start) * 1000.0)
+                        num_replans += 1
                         assert (
                             len(action_chunk) >= args.replan_steps
                         ), f"We want to replan every {args.replan_steps} steps, but policy only predicts {len(action_chunk)} steps."
                         action_plan.extend(action_chunk[: args.replan_steps])
 
-                    action = action_plan.popleft()
+                    action = np.asarray(action_plan.popleft())
+                    if previous_action is not None:
+                        action_delta_norms.append(float(np.linalg.norm(action - previous_action)))
+                    previous_action = action
 
                     # Execute action in environment
                     obs, reward, done, info = env.step(action.tolist())
+                    executed_steps += 1
                     if done:
                         task_successes += 1
                         total_successes += 1
@@ -159,6 +181,7 @@ def eval_libero(args: Args) -> None:
 
                 except Exception as e:
                     logging.error(f"Caught exception: {e}")
+                    error_message = str(e)
                     break
 
             task_episodes += 1
@@ -166,15 +189,45 @@ def eval_libero(args: Args) -> None:
 
             # Save a replay video of the episode
             suffix = "success" if done else "failure"
-            task_segment = task_description.replace(" ", "_")
-            imageio.mimwrite(
-                pathlib.Path(args.video_out_path) / f"rollout_{task_segment}_{suffix}.mp4",
-                [np.asarray(x) for x in replay_images],
-                fps=10,
-            )
+            task_segment = _slugify(task_description)
+            video_path = video_out_dir / f"rollout_task{task_id:03d}_episode{episode_idx:03d}_{task_segment}_{suffix}.mp4"
+            if replay_images:
+                imageio.mimwrite(
+                    video_path,
+                    [np.asarray(x) for x in replay_images],
+                    fps=10,
+                )
+
+            metrics_record = {
+                "task_suite_name": args.task_suite_name,
+                "task_id": task_id,
+                "task_description": task_description,
+                "episode_index": episode_idx,
+                "success": done,
+                "episode_steps": executed_steps,
+                "num_replans": num_replans,
+                "infer_latency_ms": [float(x) for x in infer_latency_ms],
+                "infer_latency_ms_mean": _safe_mean(infer_latency_ms),
+                "infer_latency_ms_max": _safe_max(infer_latency_ms),
+                "action_delta_norm": [float(x) for x in action_delta_norms],
+                "action_delta_norm_mean": _safe_mean(action_delta_norms),
+                "action_delta_norm_max": _safe_max(action_delta_norms),
+                "video_path": str(video_path),
+                "error": error_message,
+            }
+            _append_jsonl(metrics_out_path, metrics_record)
 
             # Log current results
             logging.info(f"Success: {done}")
+            logging.info(
+                "Episode metrics: steps=%s replans=%s infer_latency_ms(mean/max)=%.2f/%.2f action_delta_norm(mean/max)=%.4f/%.4f",
+                executed_steps,
+                num_replans,
+                metrics_record["infer_latency_ms_mean"],
+                metrics_record["infer_latency_ms_max"],
+                metrics_record["action_delta_norm_mean"],
+                metrics_record["action_delta_norm_max"],
+            )
             logging.info(f"# episodes completed so far: {total_episodes}")
             logging.info(f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)")
 
@@ -212,6 +265,28 @@ def _quat2axisangle(quat):
         return np.zeros(3)
 
     return (quat[:3] * 2.0 * math.acos(quat[3])) / den
+
+
+def _append_jsonl(path: pathlib.Path, record: dict) -> None:
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def _safe_mean(values) -> float:
+    if not values:
+        return 0.0
+    return float(sum(values) / len(values))
+
+
+def _safe_max(values) -> float:
+    if not values:
+        return 0.0
+    return float(max(values))
+
+
+def _slugify(value: str, *, max_len: int = 80) -> str:
+    slug = re.sub(r"[^0-9A-Za-z]+", "_", value).strip("_").lower()
+    return slug[:max_len] if slug else "task"
 
 
 if __name__ == "__main__":
