@@ -203,7 +203,7 @@ def eval_libero(args: Args) -> None:
                 "task_id": task_id,
                 "task_description": task_description,
                 "episode_index": episode_idx,
-                "success": done,
+                "success": bool(done),
                 "episode_steps": executed_steps,
                 "num_replans": num_replans,
                 "infer_latency_ms": [float(x) for x in infer_latency_ms],
