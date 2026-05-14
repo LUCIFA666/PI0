@@ -13,8 +13,9 @@ bash scripts/reproduce_droid_small.sh setup
 ```
 
 This creates or reuses the `openpi` conda environment, installs `uv`, syncs the
-project dependencies into the active conda environment, and initializes git
-submodules.
+project dependencies into the standard project `.venv`, and initializes git
+submodules. The conda environment is used as the server-side launcher for `uv`;
+the actual openpi dependencies live in `.venv`, matching the upstream README.
 
 ## Download and convert data
 

@@ -59,8 +59,9 @@ activate_conda_env() {
   conda activate "$CONDA_ENV"
   set -u
 
-  # Make uv install into the active conda env instead of creating .venv.
-  export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
+  # Let uv use the project's standard .venv. Pointing UV_PROJECT_ENVIRONMENT at
+  # a conda env makes `uv run` fail because conda envs are not PEP 405 venvs.
+  unset UV_PROJECT_ENVIRONMENT
   export OPENPI_DATA_HOME
 }
 
@@ -172,7 +173,7 @@ export_env() {
   activate_conda_env
   cd "$ROOT_DIR"
   conda env export --no-builds > environment-openpi.yml
-  python -m pip freeze > requirements-openpi-freeze.txt
+  uv pip freeze > requirements-openpi-freeze.txt
   git rev-parse HEAD > reproduce-git-commit.txt
   nvidia-smi > reproduce-nvidia-smi.txt || true
   echo "Wrote environment-openpi.yml, requirements-openpi-freeze.txt, reproduce-git-commit.txt, reproduce-nvidia-smi.txt"
