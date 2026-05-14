@@ -59,16 +59,27 @@ Defaults:
 
 ```text
 EXP_NAME=droid_small_sanity
+TRAIN_CONFIG=pi05_droid_low_mem_finetune
 TRAIN_STEPS=200
 BATCH_SIZE=4
 SAVE_INTERVAL=100
 LOG_INTERVAL=10
 ```
 
+The default training config is the low-memory LoRA DROID config. The original
+`pi05_droid_finetune` config performs full fine-tuning and can require far more
+GPU memory during optimizer initialization.
+
 For a smaller GPU:
 
 ```bash
 BATCH_SIZE=2 bash scripts/reproduce_droid_small.sh train
+```
+
+If you explicitly want to try full fine-tuning on a large-memory machine:
+
+```bash
+TRAIN_CONFIG=pi05_droid_finetune BATCH_SIZE=2 bash scripts/reproduce_droid_small.sh train
 ```
 
 For a longer run:

@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONDA_ENV="${CONDA_ENV:-openpi}"
 DATA_DIR="${DROID_SMALL_DATA_DIR:-$HOME/datasets/droid_small}"
 EXP_NAME="${EXP_NAME:-droid_small_sanity}"
+TRAIN_CONFIG="${TRAIN_CONFIG:-pi05_droid_low_mem_finetune}"
 TRAIN_STEPS="${TRAIN_STEPS:-200}"
 BATCH_SIZE="${BATCH_SIZE:-4}"
 SAVE_INTERVAL="${SAVE_INTERVAL:-100}"
@@ -22,7 +23,7 @@ Commands:
   download     Download the small DROID demo subset and language annotations.
   check-data   Verify that the small DROID data has the expected files.
   convert      Convert the small raw DROID subset to a local LeRobot dataset.
-  train        Run a short sanity fine-tune on pi05_droid_finetune.
+  train        Run a short sanity fine-tune on the configured DROID config.
   serve        Serve the latest checkpoint from the sanity run.
   client       Run the simple DROID client against a running policy server.
   export-env   Save conda/pip/git/GPU reproduction metadata.
@@ -32,6 +33,7 @@ Environment overrides:
   CONDA_ENV=openpi
   DROID_SMALL_DATA_DIR=$HOME/datasets/droid_small
   EXP_NAME=droid_small_sanity
+  TRAIN_CONFIG=pi05_droid_low_mem_finetune
   TRAIN_STEPS=200
   BATCH_SIZE=4
   SAVE_INTERVAL=100
@@ -132,7 +134,7 @@ train_sanity() {
   activate_conda_env
   cd "$ROOT_DIR"
   XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 WANDB_MODE=disabled \
-    uv run scripts/train.py pi05_droid_finetune \
+    uv run scripts/train.py "$TRAIN_CONFIG" \
       --exp-name="$EXP_NAME" \
       --overwrite \
       --num-train-steps="$TRAIN_STEPS" \
@@ -143,7 +145,7 @@ train_sanity() {
 }
 
 latest_checkpoint_step() {
-  local ckpt_root="$ROOT_DIR/checkpoints/pi05_droid_finetune/$EXP_NAME"
+  local ckpt_root="$ROOT_DIR/checkpoints/$TRAIN_CONFIG/$EXP_NAME"
   test -d "$ckpt_root" || die "Checkpoint directory not found: $ckpt_root"
   find "$ckpt_root" -maxdepth 1 -mindepth 1 -type d -printf '%f\n' \
     | grep -E '^[0-9]+$' \
@@ -159,8 +161,8 @@ serve_policy() {
   test -n "$step" || die "Could not find a checkpoint step for EXP_NAME=$EXP_NAME"
 
   uv run scripts/serve_policy.py policy:checkpoint \
-    --policy.config=pi05_droid_finetune \
-    --policy.dir="checkpoints/pi05_droid_finetune/$EXP_NAME/$step"
+    --policy.config="$TRAIN_CONFIG" \
+    --policy.dir="checkpoints/$TRAIN_CONFIG/$EXP_NAME/$step"
 }
 
 run_client() {
