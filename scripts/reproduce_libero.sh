@@ -18,6 +18,7 @@ TRAIN_STEPS="${TRAIN_STEPS:-1000}"
 BATCH_SIZE="${BATCH_SIZE:-8}"
 SAVE_INTERVAL="${SAVE_INTERVAL:-500}"
 LOG_INTERVAL="${LOG_INTERVAL:-20}"
+NORM_MAX_FRAMES="${NORM_MAX_FRAMES:-100000}"
 
 usage() {
   cat <<'EOF'
@@ -30,6 +31,7 @@ Commands:
   official-suite     Run official pi05_libero eval with NUM_TRIALS, default task suite libero_spatial.
   download-data      Download raw LIBERO RLDS data from Hugging Face.
   convert-data       Convert raw LIBERO RLDS data to local LeRobot format.
+  norm-stats         Compute normalization stats for the local LeRobot LIBERO dataset.
   train-local        Run local low-memory LIBERO LoRA sanity training.
   local-smoke        Evaluate the latest local checkpoint with 2 trials/task by default.
   local-suite        Evaluate the latest local checkpoint with NUM_TRIALS.
@@ -47,6 +49,7 @@ Environment overrides:
   EXP_NAME=libero_local_sanity
   TRAIN_STEPS=1000
   BATCH_SIZE=8
+  NORM_MAX_FRAMES=100000
   CHECKPOINT_STEP=<step number for local eval>
 EOF
 }
@@ -119,6 +122,14 @@ convert_data() {
   uv run --group rlds examples/libero/convert_libero_data_to_lerobot.py --data_dir "$LIBERO_DATA_DIR"
 }
 
+compute_norm_stats() {
+  activate_conda_env
+  cd "$ROOT_DIR"
+  uv run scripts/compute_norm_stats.py \
+    --config-name "$TRAIN_CONFIG" \
+    --max-frames "$NORM_MAX_FRAMES"
+}
+
 train_local() {
   activate_conda_env
   cd "$ROOT_DIR"
@@ -185,6 +196,7 @@ case "$cmd" in
   official-suite) official_suite ;;
   download-data) download_data ;;
   convert-data) convert_data ;;
+  norm-stats) compute_norm_stats ;;
   train-local) train_local ;;
   local-smoke) local_smoke ;;
   local-suite) local_suite ;;

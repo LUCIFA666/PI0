@@ -70,6 +70,19 @@ The converted dataset repo id is:
 your_hf_username/libero
 ```
 
+Compute normalization stats:
+
+```bash
+bash scripts/reproduce_libero.sh norm-stats
+```
+
+The default uses `NORM_MAX_FRAMES=100000` for a quicker sanity run. For more
+complete stats:
+
+```bash
+NORM_MAX_FRAMES=500000 bash scripts/reproduce_libero.sh norm-stats
+```
+
 Run local low-memory LoRA sanity training:
 
 ```bash
@@ -84,6 +97,7 @@ EXP_NAME=libero_local_sanity
 TRAIN_STEPS=1000
 BATCH_SIZE=8
 SAVE_INTERVAL=500
+NORM_MAX_FRAMES=100000
 ```
 
 If training runs out of memory:
