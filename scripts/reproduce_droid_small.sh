@@ -52,8 +52,12 @@ require_cmd() {
 
 activate_conda_env() {
   require_cmd conda
+  # Some conda activation/deactivation hooks reference optional backup variables.
+  # Temporarily disable nounset so those hooks do not fail under `set -u`.
+  set +u
   eval "$(conda shell.bash hook)"
   conda activate "$CONDA_ENV"
+  set -u
 
   # Make uv install into the active conda env instead of creating .venv.
   export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
